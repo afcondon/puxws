@@ -3,21 +3,16 @@ Standalone example of purescript-pux using purescript-websocket-simple
 
 ## What's here
 
-Simple variation on the purescript-pux `Affjax` example with some attempt at integrating websockets in a similar manner.
+Simple variation on the purescript-pux `Affjax` example with an integration of websockets in a similar manner.
 
 ## Basic approach
 
-I've tried putting the websocket connection handler into the State of the Pux application, so that the `forall e. Eff ( ws :: WEBSOCKET | e)`
+I've put the websocket connection handler into the State of the Pux application, so that the `forall e. Eff ( ws :: WEBSOCKET | e)`
 can be available inside the `update` function that is handling the `Actions`. 
 
-## What works
+Then, in the `main`, i make a `channel` for the type of action that is going to be sent in response to data received on the websocket. That channel is used in the construction of the inital state, setting up the `onmessage` for the websocket to send a `ReceiveWSData` action in that channel.
 
-`bower install` and `pulp serve` should pretty much work to run it but *NB* it's a work in progress - i still haven't worked
-out how to integrate the callback on receipt of data from the websocket. 
+Next i `subscribe` a Signal to this Channel and i use that Signal in the config of the Pux app.
 
-## What doesn't work
+Upshot of this is that the rightmost button, marked "Socket", when clicked generates an Action `ButtonFour` which in turn sends a message on a websocket to `ws://echo.websocket.org` from whence it echoes back, causing a new Action `ReceiveWSData` which simply puts the received string into the DOM (State.banner) so that we can see it.
 
-As mentioned above - haven't yet worked out how to set up websocket so that it's handler (ie `ws.onmessage`) is able to `send`
-on the `Signal` for the app. 
-
-It might very well be that i need to create a separate `Signal` and add it in the `inputs` part of the app config in the `main`
