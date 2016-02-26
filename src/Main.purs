@@ -33,16 +33,13 @@ data Action = ButtonOne | ButtonTwo | ButtonThree | ReceiveAJAXData String | But
 
 data State = State { counter :: Int, banner :: String, socket :: Connection }
 
-initialState :: String -> forall e. Eff (ws :: WEBSOCKET|e) State
-initialState url = do
+initialState :: S.Channel Action -> String -> forall e. Eff (ws :: WEBSOCKET|e) State
+initialState chan url = do
   connection@(Connection ws) <- newWebSocket (URL url) []
   ws.onmessage $= \event -> do
       let received = runMessage (runMessageEvent event)
       log "message received from websocket"
-      -- S.send input (singleton (ReceiveWSData "data received from websocket"))
-      when (received == "goodbye") do
-        log "connection closing on receipt of goodbye note"
-        ws.close (Just (Code 1000)) (Just (Reason "none"))
+      S.send chan ((ReceiveWSData received) :: Action)
   let state = State { counter: 0, banner: "initial string", socket: connection }
   return state
 
@@ -84,7 +81,7 @@ update action (State state) input =
       , effects: [ doAjaxCall ]
       }
     ButtonFour ->
-      { state: State state { banner = "sending message on websocket"}
+      { state: State state
       , effects: [ do doWebSocketCall state.socket ]
     }
   where
@@ -96,7 +93,7 @@ update action (State state) input =
           (Left err) -> log "Error parsing JSON!"
           (Right (AjaxMsg msg)) -> S.send input (singleton (ReceiveAJAXData msg.version))
     doWebSocketCall :: forall e. Connection -> Eff (ws::WEBSOCKET|e) Unit
-    doWebSocketCall (Connection ws) =  do ws.send(Message "goodbye")
+    doWebSocketCall (Connection ws) =  do ws.send(Message "button four sends this message")
 
 -- |=================================    VIEW      =================================
 view :: State -> VirtualDOM
@@ -121,9 +118,8 @@ main :: forall e. Eff ( ws::WEBSOCKET
                       , err::EXCEPTION
                       , console::CONSOLE | e ) Unit
 main = do
-  appState <- initialState "ws://echo.websocket.org" -- forall e. Eff (ws :: WEBSOCKET|e) State
   wsInput <- S.channel (ReceiveWSData "foo")
-  S.send wsInput ((ReceiveWSData "yay") :: Action)
+  appState <- initialState wsInput "ws://echo.websocket.org" -- forall e. Eff (ws :: WEBSOCKET|e) State
   let wsSignal = S.subscribe wsInput :: S.Signal Action
   renderToDOM "#app" =<< app
     { state: appState
