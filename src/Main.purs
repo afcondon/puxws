@@ -122,12 +122,12 @@ main :: forall e. Eff ( ws::WEBSOCKET
                       , console::CONSOLE | e ) Unit
 main = do
   appState <- initialState "ws://echo.websocket.org" -- forall e. Eff (ws :: WEBSOCKET|e) State
-  wsInput <- (S.channel (Nil :: List Action))
-  S.send wsInput (singleton (ReceiveWSData "yay"))
-  let wsSignal = S.subscribe wsInput :: S.Signal (List Action)
+  wsInput <- S.channel (ReceiveWSData "foo")
+  S.send wsInput ((ReceiveWSData "yay") :: Action)
+  let wsSignal = S.subscribe wsInput :: S.Signal Action
   renderToDOM "#app" =<< app
     { state: appState
     , update: update
     , view: view
-    , inputs: []
+    , inputs: [wsSignal]
     }
