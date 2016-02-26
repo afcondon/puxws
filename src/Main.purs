@@ -86,7 +86,7 @@ update action (State state) input =
     }
   where
     -- don't know how to write signature for this function!
-    doAjaxCall = launchAff $ do
+    doAjaxCall = launchAff $ later' 1500 $ do
       res <- A.get "http://localhost:8080/version"  -- requires something like json-server running on port 8080
       let response = readJSON res.response :: F AjaxMsg
       liftEff $ case response of
@@ -106,8 +106,6 @@ view (State state) = div ! className "controls" $ do
     button ! onClick (send ButtonThree) <> className "btn btn-warning" $ text "ButtonThree"
   span $ text " "
   p ! className "btn-group" $ do
-    button ! onClick (send (ReceiveAJAXData "Detail pressed" ))
-          <> className "btn btn-xs btn-success" $ text "Detail"
     button ! onClick (send ButtonFour) <> className "btn btn-xs btn-info" $ text "Socket"
 
 -- |=================================    MAIN      =================================
