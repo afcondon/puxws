@@ -16,13 +16,15 @@ import Control.Monad.Eff.Class
 import Control.Monad.Eff.Var (($=), get)
 import Control.Monad.Eff.Exception
 import Control.Monad.Eff.Console (CONSOLE(), log)
-import Data.List (singleton)
+import Data.List (List(Nil), singleton)
 
+import DOM (DOM())
 import Pux
 import Pux.DOM.HTML.Elements (div, p, button, text, span, input)
 import Pux.DOM.HTML.Attributes (onClick, send, className, KeyboardEvent, onKeyUp, placeholder)
 import Pux.Render.DOM (renderToDOM)
-import Signal.Channel as SC
+import Signal as S
+import Signal.Channel (CHANNEL(), Channel, channel, send, subscribe) as S
 
 -- |=================================    ACTIONS      =================================
 data Action = ButtonOne | ButtonTwo | ButtonThree | ReceiveAJAXData String | ButtonFour | ReceiveWSData String
@@ -37,7 +39,7 @@ initialState url = do
   ws.onmessage $= \event -> do
       let received = runMessage (runMessageEvent event)
       log "message received from websocket"
-      -- SC.send input (singleton (ReceiveWSData "data received from websocket"))
+      -- S.send input (singleton (ReceiveWSData "data received from websocket"))
       when (received == "goodbye") do
         log "connection closing on receipt of goodbye note"
         ws.close (Just (Code 1000)) (Just (Reason "none"))
@@ -92,7 +94,7 @@ update action (State state) input =
       let response = readJSON res.response :: F AjaxMsg
       liftEff $ case response of
           (Left err) -> log "Error parsing JSON!"
-          (Right (AjaxMsg msg)) -> SC.send input (singleton (ReceiveAJAXData msg.version))
+          (Right (AjaxMsg msg)) -> S.send input (singleton (ReceiveAJAXData msg.version))
     doWebSocketCall :: forall e. Connection -> Eff (ws::WEBSOCKET|e) Unit
     doWebSocketCall (Connection ws) =  do ws.send(Message "goodbye")
 
@@ -112,11 +114,20 @@ view (State state) = div ! className "controls" $ do
     button ! onClick (send ButtonFour) <> className "btn btn-xs btn-info" $ text "Socket"
 
 -- |=================================    MAIN      =================================
+main :: forall e. Eff ( ws::WEBSOCKET
+                      , channel::S.CHANNEL
+                      , dom::DOM
+                      , ajax::A.AJAX
+                      , err::EXCEPTION
+                      , console::CONSOLE | e ) Unit
 main = do
-  appState <- initialState "ws://echo.websocket.org"
+  appState <- initialState "ws://echo.websocket.org" -- forall e. Eff (ws :: WEBSOCKET|e) State
+  wsInput <- (S.channel (Nil :: List Action))
+  S.send wsInput (singleton (ReceiveWSData "yay"))
+  let wsSignal = S.subscribe wsInput :: S.Signal (List Action)
   renderToDOM "#app" =<< app
     { state: appState
     , update: update
     , view: view
-    , inputs: [] -- [Array Signal]
+    , inputs: []
     }
