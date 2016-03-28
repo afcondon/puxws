@@ -1,33 +1,36 @@
 module Main where
 
-import Prelude hiding (div)
+import Prelude hiding ((#), div)
 
 import Data.Either
-import Data.Maybe (Maybe(..))
 import Data.Foreign
 import Data.Foreign.Class
 import WebSocket
 import Control.Monad.Aff
 import Network.HTTP.Affjax as A
-import Control.Bind ((=<<))
-import Control.Monad (when)
+import Control.Apply ((*>))
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Class
-import Control.Monad.Eff.Var (($=), get)
+import Control.Monad.Eff.Var (($=))
 import Control.Monad.Eff.Exception
 import Control.Monad.Eff.Console (CONSOLE(), log)
-import Data.List (List(Nil), singleton)
 
-import DOM (DOM())
-import Pux
-import Pux.DOM.HTML.Elements (div, p, button, text, span, input)
-import Pux.DOM.HTML.Attributes (onClick, send, className, KeyboardEvent, onKeyUp, placeholder)
-import Pux.Render.DOM (renderToDOM)
+import Pux (EffModel, start, renderToDOM)
+import Pux.Html (Html, (#), (!), div, p, button, text, span)
+import Pux.Html.Attributes (className)
+import Pux.Html.Events (onClick, onKeyUp)
 import Signal as S
 import Signal.Channel (CHANNEL(), Channel, channel, send, subscribe) as S
 
 -- |=================================    ACTIONS      =================================
-data Action = ButtonOne | ButtonTwo | ButtonThree | ReceiveAJAXData String | ButtonFour | ReceiveWSData String
+data Action
+  = ButtonOne
+  | ButtonTwo
+  | ButtonThree
+  | ReceiveAJAXData String
+  | ButtonFour
+  | ReceiveWSData String
+  | Nop
 
 -- |=================================    STATE      =================================
 
@@ -56,25 +59,23 @@ instance ajaxMessageIsForeign :: IsForeign AjaxMsg where
     return $ AjaxMsg { version: version, language: language }
 
 -- |=================================    UPDATE      =================================
-update :: forall eff. Update
-          (ajax :: A.AJAX, err :: EXCEPTION, console :: CONSOLE, ws :: WEBSOCKET | eff)
-          State
-          Action
-update action (State state) input =
+update :: forall e. Action -> State -> EffModel State Action
+            (ajax :: A.AJAX, console :: CONSOLE, ws :: WEBSOCKET | e)
+update action (State state) =
   case action of
     ButtonOne ->
       { state: State state { counter = state.counter + 1 }
-      , effects: [ do log "set view to ButtonOne" ] }
+      , effects: [ liftEff $ log "set view to ButtonOne" *> return Nop ] }
     ButtonTwo ->
       { state: State state { counter = state.counter - 1 }
-      , effects: [ do log "set view to ButtonTwo" ] }
+      , effects: [ liftEff $ log "set view to ButtonTwo" *> return Nop ] }
     ReceiveWSData msg ->
       { state: State state { banner = msg }
       , effects: []
       }
     ReceiveAJAXData msg ->
       { state: State state { banner = msg }
-      , effects: [ do log $ "Updated new state: " ++ msg ]
+      , effects: [ liftEff $ log ("Updated new state: " ++ msg) *> return Nop ]
       }
     ButtonThree ->
       { state: State state { banner = "Loading data from server..." }
@@ -82,36 +83,40 @@ update action (State state) input =
       }
     ButtonFour ->
       { state: State state
-      , effects: [ do doWebSocketCall state.socket ]
-    }
+      , effects: [ doWebSocketCall state.socket ]
+      }
+    Nop -> { state: State state, effects: [] }
   where
     -- don't know how to write signature for this function!
-    doAjaxCall = launchAff $ later' 1500 $ do
+    doAjaxCall = later' 1500 $ do
       res <- A.get "http://localhost:8080/version"  -- requires something like json-server running on port 8080
       let response = readJSON res.response :: F AjaxMsg
-      liftEff $ case response of
-          (Left err) -> log "Error parsing JSON!"
-          (Right (AjaxMsg msg)) -> S.send input (singleton (ReceiveAJAXData msg.version))
-    doWebSocketCall :: forall e. Connection -> Eff (ws::WEBSOCKET|e) Unit
-    doWebSocketCall (Connection ws) =  do ws.send(Message "button four sends this message")
+      case response of
+        (Left err) -> do
+          liftEff $ log "Error parsing JSON!"
+          return Nop
+        (Right (AjaxMsg msg)) -> return $ ReceiveAJAXData msg.version
+    doWebSocketCall :: forall e. Connection -> Aff (ws :: WEBSOCKET | e) Action
+    doWebSocketCall (Connection ws) =
+      liftEff $ ws.send(Message "button four sends this message") *> return Nop
 
 -- |=================================    VIEW      =================================
-view :: State -> VirtualDOM
-view (State state) = div ! className "controls" $ do
-  p $ text (show state.counter)
-  p $ text (show state.banner)
-  p ! className "btn-group" $ do
-    button ! onClick (send ButtonOne)   <> className "btn btn-primary" $ text "ButtonOne"
-    button ! onClick (send ButtonTwo)   <> className "btn btn-info"    $ text "ButtonTwo"
-    button ! onClick (send ButtonThree) <> className "btn btn-warning" $ text "ButtonThree"
-  span $ text " "
-  p ! className "btn-group" $ do
-    button ! onClick (send ButtonFour) <> className "btn btn-xs btn-info" $ text "Socket"
+view :: State -> Html Action
+view (State state) = div ! className "controls" # do
+  p # text (show state.counter)
+  p # text (show state.banner)
+  p ! className "btn-group" # do
+    button ! onClick (const ButtonOne)   ! className "btn btn-primary" # text "ButtonOne"
+    button ! onClick (const ButtonTwo)   ! className "btn btn-info"    # text "ButtonTwo"
+    button ! onClick (const ButtonThree) ! className "btn btn-warning" # text "ButtonThree"
+  span # text " "
+  p ! className "btn-group" # do
+    button ! onClick (const ButtonFour) ! className "btn btn-xs btn-info" # text "Socket"
+  where bind = Pux.Html.bind
 
 -- |=================================    MAIN      =================================
 main :: forall e. Eff ( ws::WEBSOCKET
                       , channel::S.CHANNEL
-                      , dom::DOM
                       , ajax::A.AJAX
                       , err::EXCEPTION
                       , console::CONSOLE | e ) Unit
@@ -119,9 +124,11 @@ main = do
   wsInput <- S.channel (ReceiveWSData "foo")
   appState <- initialState wsInput "ws://echo.websocket.org" -- forall e. Eff (ws :: WEBSOCKET|e) State
   let wsSignal = S.subscribe wsInput :: S.Signal Action
-  renderToDOM "#app" =<< app
-    { state: appState
+  app <- start
+    { initialState: appState
     , update: update
     , view: view
     , inputs: [wsSignal]
     }
+
+  renderToDOM "#app" app.html
