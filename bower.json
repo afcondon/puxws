@@ -15,7 +15,7 @@
   },
   "devDependencies": {
     "purescript-either": "^0.2.3",
-    "purescript-pux": "^1.0.0",
+    "purescript-pux": "^2.0.2",
     "purescript-signal": "^5.0.0",
     "purescript-lists": "^0.7.9",
     "purescript-websocket-simple": "^0.2.0",
