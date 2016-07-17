@@ -1,6 +1,6 @@
 module Main where
 
-import Prelude hiding ((#), div)
+import Prelude hiding (div)
 
 import Data.Either (Either(Right, Left))
 import Data.Foreign (F)
@@ -16,7 +16,7 @@ import Control.Monad.Eff.Exception (EXCEPTION)
 import Control.Monad.Eff.Console (CONSOLE(), log)
 
 import Pux (EffModel, start, renderToDOM, noEffects)
-import Pux.Html (Html, (#), (!), div, p, button, text, span)
+import Pux.Html (Html, div, p, button, text, span)
 import Pux.Html.Attributes (className)
 import Pux.Html.Events (onClick)
 import Signal (Signal) as S
@@ -36,7 +36,7 @@ data Action
 
 type State = { counter :: Int, banner :: String, socket :: Connection }
 
-initialState :: S.Channel Action -> String -> forall e. Eff (ws :: WEBSOCKET|e) State
+initialState :: S.Channel Action -> String -> forall e. Eff (err :: EXCEPTION, ws :: WEBSOCKET|e) State
 initialState chan url = do
   connection@(Connection ws) <- newWebSocket (URL url) []
   ws.onmessage $= \event -> do
@@ -44,33 +44,33 @@ initialState chan url = do
       log "message received from websocket"
       S.send chan ((ReceiveWSData received) :: Action)
   let state = { counter: 0, banner: "initial string", socket: connection }
-  return state
+  pure state
 
 -- |=================================    Ajax      =================================
 data AjaxMsg = AjaxMsg { version :: String, language :: String } -- {"version":"4.2.10092","language":"javax"}
 
 instance showAjaxMsg :: Show AjaxMsg where
-  show (AjaxMsg m) = "{ \"version\": \"" ++ m.version ++ "\"language\": \"" ++ m.language ++ "\" }"
+  show (AjaxMsg m) = "{ \"version\": \"" <> m.version <> "\"language\": \"" <> m.language <> "\" }"
 
 instance ajaxMessageIsForeign :: IsForeign AjaxMsg where
   read value = do
     version  <- readProp "version" value
     language <- readProp "language" value
-    return $ AjaxMsg { version: version, language: language }
+    pure $ AjaxMsg { version: version, language: language }
 
 -- |=================================    UPDATE      =================================
 update :: forall e. Action -> State -> EffModel State Action
-            (ajax :: A.AJAX, console :: CONSOLE, ws :: WEBSOCKET | e)
+            (ajax :: A.AJAX, console :: CONSOLE, ws :: WEBSOCKET, err :: EXCEPTION | e)
 update ButtonOne state =
       { state: state { counter = state.counter + 1 }
-      , effects: [ liftEff $ log "set view to ButtonOne" *> return Nop ] }
+      , effects: [ liftEff $ log "set view to ButtonOne" *> pure Nop ] }
 update ButtonTwo state =
       { state: state { counter = state.counter - 1 }
-      , effects: [ liftEff $ log "set view to ButtonTwo" *> return Nop ] }
+      , effects: [ liftEff $ log "set view to ButtonTwo" *> pure Nop ] }
 update (ReceiveWSData msg) state = noEffects $ state { banner = msg }
 update (ReceiveAJAXData msg) state =
       { state: state { banner = msg }
-      , effects: [ liftEff $ log ("Updated new state: " ++ msg) *> return Nop ]
+      , effects: [ liftEff $ log ("Updated new state: " <> msg) *> pure Nop ]
       }
 update ButtonThree state =
       { state: state { banner = "Loading data from server..." }
@@ -89,26 +89,30 @@ doAjaxCall = later' 1500 $ do
   case response of
     (Left err) -> do
       liftEff $ log "Error parsing JSON!"
-      return Nop
-    (Right (AjaxMsg msg)) -> return $ ReceiveAJAXData msg.version
+      pure Nop
+    (Right (AjaxMsg msg)) -> pure $ ReceiveAJAXData msg.version
 
-doWebSocketCall :: forall e. Connection -> Aff (ws :: WEBSOCKET | e) Action
+doWebSocketCall :: forall e. Connection -> Aff (err :: EXCEPTION, ws :: WEBSOCKET | e) Action
 doWebSocketCall (Connection ws) =
-  liftEff $ ws.send(Message "button four sends this message") *> return Nop
+  liftEff $ ws.send(Message "button four sends this message") *> pure Nop
 
 -- |=================================    VIEW      =================================
+
 view :: State -> Html Action
-view state = div ! className "controls" # do
-  p # text (show state.counter)
-  p # text (show state.banner)
-  p ! className "btn-group" # do
-    button ! onClick (const ButtonOne)   ! className "btn btn-primary" # text "ButtonOne"
-    button ! onClick (const ButtonTwo)   ! className "btn btn-info"    # text "ButtonTwo"
-    button ! onClick (const ButtonThree) ! className "btn btn-warning" # text "ButtonThree"
-  span # text " "
-  p ! className "btn-group" # do
-    button ! onClick (const ButtonFour) ! className "btn btn-xs btn-info" # text "Socket"
-  where bind = Pux.Html.bind
+view state =
+  div [className "controls"]
+  [ p [] [text (show state.counter)]
+  , p [] [text (show state.banner)]
+  , p [className "btn-group"]
+    [ button [onClick (const ButtonOne),   className "btn btn-primary"] [text "ButtonOne"]
+    , button [onClick (const ButtonTwo),   className "btn btn-info"]    [text "ButtonTwo"]
+    , button [onClick (const ButtonThree), className "btn btn-warning"] [text "ButtonThree"]
+    ]
+  , span [] [text " "]
+  , p [className "btn-group"]
+    [ button [onClick (const ButtonFour), className "btn btn-xs btn-info"] [text "Socket"]
+    ]
+  ]
 
 -- |=================================    MAIN      =================================
 main :: forall e. Eff ( ws::WEBSOCKET
