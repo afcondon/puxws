@@ -1,3 +1,5 @@
+# NB - repo is not currently in a working state - problem with duplicate row effects for EXCEPTIONs
+
 # puxws
 Standalone example of purescript-pux using purescript-websocket-simple
 
