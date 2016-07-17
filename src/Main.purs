@@ -15,12 +15,12 @@ import Control.Monad.Eff.Var (($=))
 import Control.Monad.Eff.Exception (EXCEPTION)
 import Control.Monad.Eff.Console (CONSOLE(), log)
 
-import Pux (EffModel, start, renderToDOM, noEffects)
+import Pux (EffModel, start, renderToDOM, noEffects, CoreEffects, App)
 import Pux.Html (Html, div, p, button, text, span)
 import Pux.Html.Attributes (className)
 import Pux.Html.Events (onClick)
 import Signal (Signal) as S
-import Signal.Channel (CHANNEL(), Channel, channel, send, subscribe) as S
+import Signal.Channel (Channel, channel, send, subscribe) as S
 
 -- |=================================    ACTIONS      =================================
 data Action
@@ -115,12 +115,9 @@ view state =
   ]
 
 -- |=================================    MAIN      =================================
-main :: forall e. Eff ( ws::WEBSOCKET
-                      , channel::S.CHANNEL
-                      , ajax::A.AJAX
-                      , err::EXCEPTION
-                      , console::CONSOLE | e ) Unit
-main = do
+type AppEffects = (console :: CONSOLE, ws :: WEBSOCKET, ajax :: A.AJAX)
+main :: State -> Eff (CoreEffects AppEffects) (App State Action)
+main state = do
   wsInput <- S.channel Nop
   appState <- initialState wsInput "ws://echo.websocket.org" -- forall e. Eff (ws :: WEBSOCKET|e) State
   let wsSignal = S.subscribe wsInput :: S.Signal Action
@@ -132,3 +129,5 @@ main = do
     }
 
   renderToDOM "#app" app.html
+
+  pure app
